@@ -5,10 +5,12 @@
   * @author  STM32_LIB_STYLE_GUIDE
   * @date    2026-02-22
   * @version 0.9.0
+  * @copyright Libre sous licence MIT.
   ******************************************************************************
   */
 
 #include "STM32_AHT20.h"
+#include <string.h>  /* memset — Async_Init zero-init buffers */
 
 /* ============================================================================
  * Private function prototypes
@@ -41,6 +43,10 @@ const char* AHT20_StatusToString(AHT20_Status status) {
         case AHT20_ERR_OVERFLOW:          return "ERR_OVERFLOW";
         default:                          return "UNKNOWN";
     }
+}
+#else
+const char* AHT20_StatusToString(AHT20_Status status) {
+    (void)status; return "";
 }
 #endif /* AHT20_DEBUG_ENABLE */
 
@@ -80,7 +86,7 @@ static uint8_t AHT20_CalculateChecksum(uint8_t *data, uint8_t len) {
  * @param hi2c Pointeur vers la structure de handle I2C
  * @return Statut de l'opération
  */
-AHT20_Status AHT20_Init(AHT20_Handle *haht20, I2C_HandleTypeDef *hi2c) {
+AHT20_Status AHT20_Init(AHT20_Handle_t *haht20, I2C_HandleTypeDef *hi2c) {
     uint8_t cmd_init[3] = {AHT20_CMD_INIT, AHT20_INIT_PARAM1, AHT20_INIT_PARAM2};
     uint8_t status_byte;
     HAL_StatusTypeDef hal_status;
@@ -149,7 +155,7 @@ AHT20_Status AHT20_Init(AHT20_Handle *haht20, I2C_HandleTypeDef *hi2c) {
 /**
  * @brief Remet le handle à zéro (DeInit)
  */
-AHT20_Status AHT20_DeInit(AHT20_Handle *haht20) {
+AHT20_Status AHT20_DeInit(AHT20_Handle_t *haht20) {
     if (haht20 == NULL) {
         return AHT20_ERR_NULL_PTR;
     }
@@ -173,7 +179,7 @@ AHT20_Status AHT20_DeInit(AHT20_Handle *haht20) {
  * @param haht20 Pointeur vers le handle AHT20
  * @return Statut de l'opération
  */
-AHT20_Status AHT20_SoftReset(AHT20_Handle *haht20) {
+AHT20_Status AHT20_SoftReset(AHT20_Handle_t *haht20) {
     uint8_t cmd = AHT20_CMD_SOFT_RESET;
     HAL_StatusTypeDef hal_status;
 
@@ -205,7 +211,7 @@ AHT20_Status AHT20_SoftReset(AHT20_Handle *haht20) {
  * @param status Pointeur pour stocker l'octet de statut
  * @return Statut de l'opération
  */
-AHT20_Status AHT20_GetStatus(AHT20_Handle *haht20, uint8_t *status) {
+AHT20_Status AHT20_GetStatus(AHT20_Handle_t *haht20, uint8_t *status) {
     HAL_StatusTypeDef hal_status;
 
     if (haht20 == NULL || haht20->hi2c == NULL || status == NULL) {
@@ -237,13 +243,13 @@ AHT20_Status AHT20_GetStatus(AHT20_Handle *haht20, uint8_t *status) {
  * @param data Pointeur vers une structure pour stocker les mesures
  * @return Statut de l'opération
  */
-AHT20_Status AHT20_ReadMeasurements(AHT20_Handle *haht20, AHT20_Data *data) {
+AHT20_Status AHT20_ReadMeasurements(AHT20_Handle_t *haht20, AHT20_Data *data) {
     uint8_t cmd[3] = {AHT20_CMD_TRIGGER, AHT20_MEASURE_PARAM1, AHT20_MEASURE_PARAM2};
     uint8_t buffer[7];
     HAL_StatusTypeDef hal_status;
     uint32_t raw_humidity, raw_temperature;
 
-    if (haht20 == NULL || data == NULL) {
+    if (haht20 == NULL || haht20->hi2c == NULL || data == NULL) {
         return AHT20_ERR_NULL_PTR;
     }
     if (!haht20->initialized) {
@@ -311,14 +317,14 @@ AHT20_Status AHT20_ReadMeasurements(AHT20_Handle *haht20, AHT20_Data *data) {
 /**
  * @brief Initialise le contexte asynchrone
  */
-void AHT20_Async_Init(AHT20_Async *ctx, AHT20_Handle *haht20) {
+void AHT20_Async_Init(AHT20_Async *ctx, AHT20_Handle_t *haht20) {
     if (ctx == NULL || haht20 == NULL) return;
     if (!haht20->initialized) {
         ctx->last_status = AHT20_ERR_NOT_INITIALIZED;
         ctx->state = AHT20_ASYNC_ERROR;
         return;
     }
-    
+
     ctx->haht20 = haht20;
     ctx->hi2c = haht20->hi2c;  /* Copie pour compatibilité */
     ctx->i2c_addr = haht20->i2c_addr;
@@ -327,17 +333,23 @@ void AHT20_Async_Init(AHT20_Async *ctx, AHT20_Handle *haht20) {
     ctx->last_status = AHT20_OK;
     ctx->meas_deadline_ms = 0;
     ctx->i2c_deadline_ms = 0;
-    
+
+    /* M2 : zero-init buffers I/O et données pour éviter lecture de bruit */
+    memset(ctx->tx_buf, 0, sizeof(ctx->tx_buf));
+    memset(ctx->rx_buf, 0, sizeof(ctx->rx_buf));
+    ctx->data = (AHT20_Data){0.0f, 0.0f};
+
     ctx->data_ready_flag = false;
     ctx->error_flag = false;
     ctx->notify_data_pending = false;
     ctx->notify_error_pending = false;
-    
+
     ctx->on_data_ready = NULL;
     ctx->on_error = NULL;
     ctx->on_irq_data_ready = NULL;
     ctx->on_irq_error = NULL;
-    ctx->user_ctx = NULL;
+    ctx->user_ctx     = NULL;   /* Contexte callbacks main-loop */
+    ctx->irq_user_ctx = NULL;   /* Contexte callbacks IRQ-safe (F1 : champ distinct) */
 }
 
 /**
@@ -345,6 +357,12 @@ void AHT20_Async_Init(AHT20_Async *ctx, AHT20_Handle *haht20) {
  */
 void AHT20_Async_Reset(AHT20_Async *ctx) {
     if (ctx == NULL) return;
+
+    /* M4 : libère le guard async_busy si Reset forcé hors chemin normal
+     *       (ex. appel utilisateur après erreur sans passer par GetData) */
+    if (ctx->haht20 != NULL) {
+        ctx->haht20->async_busy = 0;
+    }
 
     ctx->state               = AHT20_ASYNC_IDLE;    // Remet à l'état repos
     ctx->last_status         = AHT20_OK;             // Efface le dernier code erreur
@@ -380,8 +398,8 @@ void AHT20_Async_SetIrqCallbacks(AHT20_Async *ctx,
                                  void *user_ctx) {
     if (ctx == NULL) return;
     ctx->on_irq_data_ready = on_irq_data_ready;
-    ctx->on_irq_error = on_irq_error;
-    ctx->user_ctx = user_ctx;
+    ctx->on_irq_error      = on_irq_error;
+    ctx->irq_user_ctx      = user_ctx;  /* F1 : champ distinct, ne pas écraser user_ctx (main-loop) */
 }
 
 /**
@@ -474,6 +492,9 @@ void AHT20_Async_Process(AHT20_Async *ctx, uint32_t now_ms) {
             // Attente callback HAL (TxCplt ou Error)
             // Timeout I2C (comparaison signée pour gestion wrap-around uint32)
             if ((int32_t)(now_ms - ctx->i2c_deadline_ms) >= 0) {
+                ctx->haht20->async_busy = 0;           /* Libère le guard sur timeout */
+                ctx->haht20->consecutive_errors++;
+                ctx->haht20->last_error = AHT20_ERR_TIMEOUT;
                 ctx->state = AHT20_ASYNC_ERROR;
                 ctx->last_status = AHT20_ERR_TIMEOUT;
                 ctx->error_flag = true;
@@ -499,6 +520,9 @@ void AHT20_Async_Process(AHT20_Async *ctx, uint32_t now_ms) {
                         ctx->last_status = AHT20_ERR_I2C;
                     }
                     ctx->error_flag = true;
+                    ctx->haht20->async_busy = 0;           /* Libère le guard sur erreur RX */
+                    ctx->haht20->consecutive_errors++;
+                    ctx->haht20->last_error = ctx->last_status;
                 }
             }
             break;
@@ -507,6 +531,9 @@ void AHT20_Async_Process(AHT20_Async *ctx, uint32_t now_ms) {
             // Attente callback HAL (RxCplt ou Error)
             // Timeout I2C (comparaison signée pour gestion wrap-around uint32)
             if ((int32_t)(now_ms - ctx->i2c_deadline_ms) >= 0) {
+                ctx->haht20->async_busy = 0;           /* Libère le guard sur timeout */
+                ctx->haht20->consecutive_errors++;
+                ctx->haht20->last_error = AHT20_ERR_TIMEOUT;
                 ctx->state = AHT20_ASYNC_ERROR;
                 ctx->last_status = AHT20_ERR_TIMEOUT;
                 ctx->error_flag = true;
@@ -537,8 +564,13 @@ AHT20_Status AHT20_Async_GetData(AHT20_Async *ctx, AHT20_Data *out) {
         return AHT20_ERR_NULL_PTR;
     }
     
+    /* M3 : codes sémantiques selon l'état réel (ERR_BUSY uniquement pendant transfert) */
     if (ctx->state != AHT20_ASYNC_DONE) {
-        return AHT20_ERR_BUSY;
+        switch (ctx->state) {
+            case AHT20_ASYNC_IDLE:  return AHT20_ERR_NOT_CONFIGURED; /* Aucune mesure lancée */
+            case AHT20_ASYNC_ERROR: return ctx->last_status;          /* Propagate l'erreur active */
+            default:                return AHT20_ERR_BUSY;            /* Transfert en cours */
+        }
     }
     
     *out = ctx->data;
@@ -605,7 +637,7 @@ void AHT20_Async_OnI2CMasterRxCplt(AHT20_Async *ctx, I2C_HandleTypeDef *hi2c) {
             ctx->haht20->async_busy  = 0;
             ctx->haht20->consecutive_errors++;
             ctx->haht20->last_error  = AHT20_ERR_BUSY;
-            if (ctx->on_irq_error) ctx->on_irq_error(ctx->user_ctx);
+            if (ctx->on_irq_error) ctx->on_irq_error(ctx->irq_user_ctx);  /* F1 : contexte IRQ */
             ctx->notify_error_pending = true;
             return;
         }
@@ -619,7 +651,7 @@ void AHT20_Async_OnI2CMasterRxCplt(AHT20_Async *ctx, I2C_HandleTypeDef *hi2c) {
             ctx->haht20->async_busy  = 0;
             ctx->haht20->consecutive_errors++;
             ctx->haht20->last_error  = AHT20_ERR_CHECKSUM;
-            if (ctx->on_irq_error) ctx->on_irq_error(ctx->user_ctx);
+            if (ctx->on_irq_error) ctx->on_irq_error(ctx->irq_user_ctx);  /* F1 : contexte IRQ */
             ctx->notify_error_pending = true;
             return;
         }
@@ -638,7 +670,7 @@ void AHT20_Async_OnI2CMasterRxCplt(AHT20_Async *ctx, I2C_HandleTypeDef *hi2c) {
         ctx->haht20->consecutive_errors = 0;
         ctx->haht20->last_error = AHT20_OK;
 
-        if (ctx->on_irq_data_ready) ctx->on_irq_data_ready(ctx->user_ctx);
+        if (ctx->on_irq_data_ready) ctx->on_irq_data_ready(ctx->irq_user_ctx);  /* F1 : contexte IRQ */
         ctx->notify_data_pending = true;
     }
 }
@@ -658,7 +690,7 @@ void AHT20_Async_OnI2CError(AHT20_Async *ctx, I2C_HandleTypeDef *hi2c) {
         ctx->haht20->last_error     = AHT20_ERR_I2C;
         ctx->haht20->last_hal_error = HAL_I2C_GetError(hi2c);
 
-        if (ctx->on_irq_error) ctx->on_irq_error(ctx->user_ctx);
+        if (ctx->on_irq_error) ctx->on_irq_error(ctx->irq_user_ctx);  /* F1 : contexte IRQ */
         ctx->notify_error_pending = true;
     }
 }

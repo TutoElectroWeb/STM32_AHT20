@@ -127,13 +127,13 @@ Quand `consecutive_errors >= AHT20_MAX_CONSECUTIVE_ERRORS` (défaut : 3), l'appl
 
 ## Exemples
 
-| Fichier                                  | Mode    | Description                                            |
-| ---------------------------------------- | ------- | ------------------------------------------------------ |
-| `exemple_aht20_polling.c`                | Polling | Lecture basique toutes les 2 s                         |
-| `exemple_aht20_polling_error_handling.c` | Polling | Gestion erreurs : retry + `consecutive_errors` + stats |
-| `exemple_aht20_polling_reset.c`          | Polling | `SoftReset()` + monitoring registre statut             |
-| `exemple_aht20_polling_features.c`       | Polling | Humidité brute + index VOC + seuils                    |
-| `exemple_aht20_async_it.c`               | Async   | IT avec `TriggerEvery`, callbacks IRQ-safe, `IsIdle`   |
+| Fichier                                  | Mode    | Description                                               |
+| ---------------------------------------- | ------- | --------------------------------------------------------- |
+| `exemple_aht20_polling.c`                | Polling | Lecture basique toutes les 2 s                            |
+| `exemple_aht20_polling_error_handling.c` | Polling | Gestion erreurs : retry + `consecutive_errors` + stats    |
+| `exemple_aht20_polling_reset.c`          | Polling | `SoftReset()` + monitoring registre statut                |
+| `exemple_aht20_polling_api_coverage.c`   | Polling | Couverture API publique : callbacks, reset async, GetData |
+| `exemple_aht20_async_it.c`               | Async   | IT avec `TriggerEvery`, callbacks IRQ-safe, `IsIdle`      |
 
 ### Matrice couverture API
 
@@ -224,4 +224,3 @@ Toutes les macros sont protégées par `#ifndef` — surchargeables via `-D` ou 
 - Conformité standard v0.9 : `consecutive_errors`, `last_hal_error`, `sample_interval_ms`, `DeInit`, `conf.h`, `StatusToString #ifdef`
 - API asynchrone IT — `TriggerEvery` 3 params (ABI inter-lib)
 - 5 exemples documentés
-

@@ -39,8 +39,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LOG_NAME "exemple_aht20_simple"   ///< Identifiant log série
-#define MEASUREMENT_INTERVAL_MS 2000       ///< Période de mesure (ms)
+#define LOG_NAME "exemple_aht20_polling"             ///< Identifiant log série
+#define MEASUREMENT_INTERVAL_MS 2000                  ///< Période de mesure (ms)
 /* Seuil de recovery = AHT20_MAX_CONSECUTIVE_ERRORS défini dans STM32_AHT20_conf.h */
 /* USER CODE END PD */
 
@@ -54,7 +54,7 @@ I2C_HandleTypeDef hi2c3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static AHT20_Handle haht20;  ///< Handle principal AHT20
+static AHT20_Handle_t haht20;  ///< Handle principal AHT20
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -167,6 +167,9 @@ int main(void)
 
     HAL_Delay(MEASUREMENT_INTERVAL_MS);
   }
+  /* AHT20_DeInit(&haht20); */
+  /* À appeler en sortie de boucle (reset logiciel, bootloader, tests unitaires)
+   * pour remettre le handle à zéro avant une ré-initialisation éventuelle. */
   /* USER CODE END 3 */
 }
 

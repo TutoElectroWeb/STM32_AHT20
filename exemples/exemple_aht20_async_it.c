@@ -56,7 +56,7 @@ I2C_HandleTypeDef hi2c3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static AHT20_Handle haht20;                         ///< Handle principal AHT20
+static AHT20_Handle_t haht20;                       ///< Handle principal AHT20
 static AHT20_Async  aht20_ctx;                      ///< Contexte asynchrone IT
 static uint32_t last_trigger_time = 0;              ///< Timestamp dernière mesure (TriggerEvery)
 static uint32_t measure_count = 0;                  ///< Compteur mesures valides
@@ -235,6 +235,10 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
   }
+  /* AHT20_Async_Reset(&aht20_ctx); */
+  /* AHT20_DeInit(&haht20); */
+  /* À appeler en sortie de boucle (reset logiciel, bootloader, tests unitaires)
+   * pour libérer le contexte async et remettre le handle à zéro. */
   /* USER CODE END 3 */
 }
 

@@ -19,7 +19,7 @@
  * - SysTick activé
  *
  * Hardware :
- * - AHT20 sur I2C1 (adresse 0x38)
+ * - AHT20 sur I2C3 (adresse 0x38)
  * - Pull-up 4.7kΩ sur SDA/SCL
  ******************************************************************************
  */
@@ -47,7 +47,7 @@ typedef struct {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LOG_NAME "exemple_aht20_error_handling"
+#define LOG_NAME "exemple_aht20_polling_error_handling"  ///< Identifiant log série
 #define MEASUREMENT_INTERVAL_MS 3000
 #define MAX_RETRY AHT20_MAX_CONSECUTIVE_ERRORS  /* Seuil défini dans STM32_AHT20_conf.h (défaut: 3) */
 /* USER CODE END PD */
@@ -62,7 +62,7 @@ I2C_HandleTypeDef hi2c3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static AHT20_Handle haht20;
+static AHT20_Handle_t haht20;
 AHT20_Stats_t stats = {0};
 /* USER CODE END PV */
 

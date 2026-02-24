@@ -13,7 +13,7 @@ Emplacement : `Drivers/STM32_AHT20/exemples/`
 | `exemple_aht20_polling.c`                | Polling basique : init → mesure → affichage T/RH                      | Débutant      |
 | `exemple_aht20_polling_error_handling.c` | Polling avancé : gestion erreurs consécutives + retry + statistiques  | Intermédiaire |
 | `exemple_aht20_polling_reset.c`          | Polling spécialisé : `SoftReset()` + monitoring statut calibration    | Intermédiaire |
-| `exemple_aht20_polling_features.c`       | Démo complète API async (ReadAll_IT + callbacks IRQ-safe + patterns)  | Avancé        |
+| `exemple_aht20_polling_api_coverage.c`   | Démo complète API async (ReadAll_IT + callbacks IRQ-safe + patterns)  | Avancé        |
 | `exemple_aht20_async_it.c`               | Mode IT app : `TriggerEvery` + `Tick` + recovery, compatible FreeRTOS | Avancé        |
 
 > **Note IT vs DMA** : AHT20 implémente uniquement le mode **IT** (pas de DMA).
@@ -58,8 +58,8 @@ défini dans `STM32_AHT20_conf.h` (ou en tête de l'exemple).
 
 ### Configuration et initialisation
 
-| API               | polling | err_handling | reset | features | async_it |
-| ----------------- | :-----: | :----------: | :---: | :------: | :------: |
+| API               | polling | err_handling | reset | api_coverage | async_it |
+| ----------------- | :-----: | :----------: | :---: | :----------: | :------: |
 | `AHT20_Init`      |    x    |      x       |   x   |    x     |    x     |
 | `AHT20_DeInit`    |    x    |      x       |   x   |    x     |    x     |
 | `AHT20_GetStatus` |         |      x       |   x   |          |          |
@@ -67,14 +67,14 @@ défini dans `STM32_AHT20_conf.h` (ou en tête de l'exemple).
 
 ### Lecture mesures (polling synchrone)
 
-| API                      | polling | err_handling | reset | features | async_it |
-| ------------------------ | :-----: | :----------: | :---: | :------: | :------: |
+| API                      | polling | err_handling | reset | api_coverage | async_it |
+| ------------------------ | :-----: | :----------: | :---: | :----------: | :------: |
 | `AHT20_ReadMeasurements` |    x    |      x       |   x   |          |          |
 
 ### API asynchrone I2C IT
 
-| API                           | features | async_it |
-| ----------------------------- | :------: | :------: |
+| API                           | api_coverage | async_it |
+| ----------------------------- | :----------: | :------: |
 | `AHT20_Async_Init`            |    x     |    x     |
 | `AHT20_Async_IsIdle`          |    x     |          |
 | `AHT20_ReadAll_IT`            |    x     |    x     |
@@ -91,14 +91,14 @@ défini dans `STM32_AHT20_conf.h` (ou en tête de l'exemple).
 | Callbacks `OnI2CMasterRxCplt` |    x     |    x     |
 | Callbacks `OnI2CError`        |    x     |    x     |
 
-> **Note nommage** : `exemple_aht20_polling_features.c` démonte l'API async
+> **Note nommage** : `exemple_aht20_polling_api_coverage.c` démonte l'API async
 > complète (ReadAll_IT + callbacks bas niveau). `exemple_aht20_async_it.c`
 > est l'exemple applicatif recommandé (pattern `TriggerEvery`).
 
 ### Gestion des erreurs et statistiques
 
-| API / Type                       | polling | err_handling | reset | features | async_it |
-| -------------------------------- | :-----: | :----------: | :---: | :------: | :------: |
+| API / Type                       | polling | err_handling | reset | api_coverage | async_it |
+| -------------------------------- | :-----: | :----------: | :---: | :----------: | :------: |
 | `AHT20_StatusToString`           |    x    |      x       |   x   |    x     |    x     |
 | `AHT20_MAX_CONSECUTIVE_ERRORS`   |    x    |      x       |       |          |    x     |
 | `AHT20_Stats_t` (stats internes) |         |      x       |       |          |          |

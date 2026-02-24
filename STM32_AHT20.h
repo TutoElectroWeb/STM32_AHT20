@@ -10,7 +10,7 @@
  * @note    Compatibilité RTOS : HAL_Delay() suspend la tâche (pas de spin-wait) ✅
  *          async_busy/async_state sont volatile : safe lecture multi-tâche.
  *          Pour plusieurs tâches accédant au bus : mutex I2C recommandé.
- * @note    sizeof(AHT20_Handle_t) ≈ 28 octets (sans async)
+ * @note    sizeof(AHT20_Handle_t) ≈ 32 octets
  *******************************************************************************
  */
 #ifndef STM32_AHT20_H
@@ -51,11 +51,12 @@ extern "C" {
 #define AHT20_MEASURE_PARAM1  0x33  ///< Premier paramètre commande trigger (0xAC)
 #define AHT20_MEASURE_PARAM2  0x00  ///< Second paramètre commande trigger
 
-/* Délais typiques (en ms) et timeout I2C */
-#define AHT20_I2C_TIMEOUT_MS          100  ///< Timeout pour les opérations I2C (ms)
-#define AHT20_DELAY_SOFT_RESET_MS      20  ///< Délai après soft reset (datasheet: ≤20ms)
-#define AHT20_DELAY_INIT_CMD_WAIT_MS   20  ///< Délai après commande init (datasheet: 10ms min)
-#define AHT20_DELAY_MEASUREMENT_WAIT_MS 80  ///< Délai attente mesure (datasheet: ≥75ms)
+/* Délais typiques (en ms) et timeout I2C — définis dans STM32_AHT20_conf.h avec #ifndef
+ * (surchargeables via -DAHT20_I2C_TIMEOUT_MS=X ou définition AVANT l'include) */
+// AHT20_I2C_TIMEOUT_MS          → conf.h (défaut 100 ms)
+// AHT20_DELAY_SOFT_RESET_MS     → conf.h (défaut 20 ms, datasheet ≤20ms)
+// AHT20_DELAY_INIT_CMD_WAIT_MS  → conf.h (défaut 20 ms, datasheet 10ms min)
+// AHT20_DELAY_MEASUREMENT_WAIT_MS→ conf.h (défaut 80 ms, datasheet ≥75ms)
 
 /* ============================================================================
  * Exported types
@@ -98,13 +99,12 @@ typedef struct {
     uint32_t           sample_interval_ms; ///< Intervalle minimal entre mesures async (ms)
 
     volatile uint8_t   consecutive_errors; ///< Compteur erreurs consécutives (reset à 0 si OK)
-    AHT20_Status       last_error;         ///< Dernier code d'erreur (diagnostic sans printf)
+    volatile AHT20_Status last_error;      ///< Dernier code d'erreur (modifiable depuis IRQ → volatile)
     uint32_t           last_hal_error;     ///< Dernier HAL_I2C_GetError() brut
 
     volatile uint8_t   async_busy;         ///< 1 = transfert IT en cours (guard polling)
-} AHT20_Handle;
-typedef AHT20_Handle AHT20_Handle_t;       ///< Alias compatibilité préfixe _t
-typedef AHT20_Handle AHT20_HandleTypeDef;  ///< Alias CubeMX-style
+} AHT20_Handle_t;
+typedef AHT20_Handle_t AHT20_HandleTypeDef;  ///< Alias CubeMX-style
 
 /* ============================================================================
  * Exported functions prototypes
@@ -122,7 +122,7 @@ typedef AHT20_Handle AHT20_HandleTypeDef;  ///< Alias CubeMX-style
  * @retval AHT20_ERR_CALIBRATION Bit CAL non actif après commande d'init
  * @retval AHT20_ERR_BUSY       Capteur occupé après init
  */
-AHT20_Status AHT20_Init(AHT20_Handle *haht20, I2C_HandleTypeDef *hi2c);
+AHT20_Status AHT20_Init(AHT20_Handle_t *haht20, I2C_HandleTypeDef *hi2c);
 
 /**
  * @brief  Remet le handle à zéro (initialized = false, tous les champs = 0).
@@ -132,7 +132,7 @@ AHT20_Status AHT20_Init(AHT20_Handle *haht20, I2C_HandleTypeDef *hi2c);
  * @retval AHT20_OK           Succès
  * @retval AHT20_ERR_NULL_PTR haht20 est NULL
  */
-AHT20_Status AHT20_DeInit(AHT20_Handle *haht20);
+AHT20_Status AHT20_DeInit(AHT20_Handle_t *haht20);
 
 /**
  * @brief  Effectue un reset logiciel (commande 0xBA) et attend AHT20_DELAY_SOFT_RESET_MS.
@@ -141,7 +141,7 @@ AHT20_Status AHT20_DeInit(AHT20_Handle *haht20);
  * @retval AHT20_ERR_NULL_PTR  haht20 ou hi2c est NULL
  * @retval AHT20_ERR_I2C       Erreur bus I2C
  */
-AHT20_Status AHT20_SoftReset(AHT20_Handle *haht20);
+AHT20_Status AHT20_SoftReset(AHT20_Handle_t *haht20);
 
 /**
  * @brief  Déclenche une mesure et lit les données (bloquant ~80ms).
@@ -156,7 +156,7 @@ AHT20_Status AHT20_SoftReset(AHT20_Handle *haht20);
  * @retval AHT20_ERR_BUSY         Capteur occupé après délai mesure
  * @retval AHT20_ERR_CHECKSUM     CRC invalide
  */
-AHT20_Status AHT20_ReadMeasurements(AHT20_Handle *haht20, AHT20_Data *data);
+AHT20_Status AHT20_ReadMeasurements(AHT20_Handle_t *haht20, AHT20_Data *data);
 
 /**
  * @brief  Lit l'octet de statut du capteur (HAL_I2C_Master_Receive — 1 octet).
@@ -168,18 +168,16 @@ AHT20_Status AHT20_ReadMeasurements(AHT20_Handle *haht20, AHT20_Data *data);
  * @retval AHT20_ERR_NOT_INITIALIZED Handle non initialisé
  * @retval AHT20_ERR_I2C          Erreur bus I2C
  */
-AHT20_Status AHT20_GetStatus(AHT20_Handle *haht20, uint8_t *status);
+AHT20_Status AHT20_GetStatus(AHT20_Handle_t *haht20, uint8_t *status);
 
 /**
  * @brief  Convertit un code AHT20_Status en chaîne de caractères (pour debug).
- * @note   Compilé uniquement si #define AHT20_DEBUG_ENABLE (dans STM32_AHT20_conf.h
- *         ou via flag -DAHT20_DEBUG_ENABLE). Table de chaînes exclue de la flash en production.
+ * @note   Retourne "" si AHT20_DEBUG_ENABLE n'est pas défini (body conditionnel dans le .c).
+ *         Table de chaînes exclue de la flash en production.
  * @param  status  Code retour à convertir
  * @retval Pointeur vers une chaîne statique constante (jamais NULL)
  */
-#ifdef AHT20_DEBUG_ENABLE
 const char *AHT20_StatusToString(AHT20_Status status);
-#endif /* AHT20_DEBUG_ENABLE */
 
 /** @brief Alias ReadMeasurements — conforme au pattern commun des libs STM32 */
 #define AHT20_ReadAll AHT20_ReadMeasurements
@@ -216,10 +214,14 @@ typedef void (*AHT20_Async_OnIrqDataReadyCb)(void *user_ctx);
 typedef void (*AHT20_Async_OnIrqErrorCb)(void *user_ctx);
 
 /**
- * @brief Structure contexte asynchrone AHT20
+ * @brief  Structure contexte asynchrone AHT20
+ * @warning Thread model : Process/Tick/TriggerEvery depuis la tâche principale
+ *          uniquement. Les callbacks on_irq_* sont appelés depuis contexte IRQ
+ *          (ultra-court, sans HAL_Delay). Ne jamais appeler ces fonctions depuis
+ *          plusieurs tâches simultanément sans mutex dédié.
  */
 typedef struct {
-    AHT20_Handle *haht20;           /**< Handle AHT20 */
+    AHT20_Handle_t *haht20;         /**< Handle AHT20 */
     I2C_HandleTypeDef *hi2c;          /**< Pointeur I2C (copie depuis haht20) */
     uint16_t           i2c_addr;       ///< Adresse I2C shiftée ×2 pour HAL
     uint32_t           i2c_timeout;    ///< Timeout HAL en ms
@@ -237,14 +239,15 @@ typedef struct {
     // Flags et callbacks
     volatile bool data_ready_flag;
     volatile bool error_flag;
-    bool notify_data_pending;
-    bool notify_error_pending;
-    
+    volatile bool notify_data_pending;   ///< Écrit en IRQ, lu en main-loop → volatile
+    volatile bool notify_error_pending;  ///< Écrit en IRQ, lu en main-loop → volatile
+
     AHT20_Async_OnDataReadyCb on_data_ready;
     AHT20_Async_OnErrorCb on_error;
     AHT20_Async_OnIrqDataReadyCb on_irq_data_ready;
     AHT20_Async_OnIrqErrorCb on_irq_error;
-    void *user_ctx;
+    void *user_ctx;      ///< Contexte main-loop (SetCallbacks)
+    void *irq_user_ctx;  ///< Contexte IRQ-safe distinct (SetIrqCallbacks) — ne jamais écraser user_ctx
 } AHT20_Async;
 
 /* Fonctions API asynchrone */
@@ -255,7 +258,7 @@ typedef struct {
  * @param  haht20  Pointeur vers le handle AHT20 (non NULL)
  * @retval None
  */
-void AHT20_Async_Init(AHT20_Async *ctx, AHT20_Handle *haht20);
+void AHT20_Async_Init(AHT20_Async *ctx, AHT20_Handle_t *haht20);
 
 /**
  * @brief Réinitialise la machine d'état async sans perdre les callbacks

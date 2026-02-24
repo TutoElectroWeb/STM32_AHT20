@@ -43,7 +43,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LOG_NAME "exemple_aht20_reset"              ///< Identifiant log série
+#define LOG_NAME "exemple_aht20_polling_reset"              ///< Identifiant log série
 #define RESET_TEST_INTERVAL_MS 30000              ///< Période du reset périodique (ms) — valeur élevée pour test de stabilité
 #define MEASUREMENT_INTERVAL_MS 2000              ///< Intervalle entre mesures (ms)
 /* USER CODE END PD */
@@ -58,7 +58,7 @@ I2C_HandleTypeDef hi2c3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static AHT20_Handle haht20;              ///< Handle principal AHT20
+static AHT20_Handle_t haht20;            ///< Handle principal AHT20
 static uint32_t reset_count = 0;         ///< Compteur de resets effectués (diagnostic)
 static uint32_t last_reset_tick = 0;     ///< Timestamp dernier reset périodique (HAL_GetTick)
 /* USER CODE END PV */
@@ -104,9 +104,12 @@ static AHT20_Status PerformSoftResetAndReinit(void)
 
     printf("OK  SoftReset OK (délai 20ms intégré)\r\n");
 
-    HAL_Delay(50);                                    // Marge supplémentaire post-reset (optionnel, non exigé datasheet)
+    HAL_Delay(50);  /* Marge supplémentaire post-reset (optionnel, non exigé datasheet) */
 
-    status = AHT20_Init(&haht20, &hi2c3);             // Ré-initialise le capteur après reset
+    /* Note : AHT20_Init appelle AHT20_SoftReset en interne (20ms supplémentaires).
+     * Ce second soft reset est redondant ici, mais inoffensif. Dans un vrai produit,
+     * remplacer cet appel par AHT20_Init seul suffit à reset + réinit le capteur. */
+    status = AHT20_Init(&haht20, &hi2c3);             /* Ré-initialise (inclut un SoftReset) */
     if (status != AHT20_OK) {
       printf("ERREUR  Ré-init échouée: %s\r\n", AHT20_StatusToString(status));
         return status;

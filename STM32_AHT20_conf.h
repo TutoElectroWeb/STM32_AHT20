@@ -27,24 +27,36 @@
 /* #define AHT20_DEBUG_ENABLE */
 
 /* ============================================================================
- * Timeouts I2C
+ * Timeouts I2C et délais capteur (overridables)
  * ============================================================================ */
 
 /**
- * @brief Timeout I2C par défaut en ms
+ * @brief Timeout I2C pour les opérations HAL_I2C_Master_* en ms
  * @note  Datasheet AHT20 §5.4 : opérations I2C < 1ms typ — 100ms offre une marge confortable.
  */
-#ifndef AHT20_DEFAULT_TIMEOUT_MS
-#define AHT20_DEFAULT_TIMEOUT_MS   100U
+#ifndef AHT20_I2C_TIMEOUT_MS
+#define AHT20_I2C_TIMEOUT_MS       100U
 #endif
 
 /**
- * @brief Timeout watchdog d'attente mesure async en ms
- * @note  Datasheet AHT20 §5.4 : conversion ≥75ms typ → 200ms offre ×2.5 de marge
- *        sans bloquer le Watchdog sur un bus très chargé.
+ * @brief Délai après soft reset (datasheet §5.4 : ≤20ms)
  */
-#ifndef AHT20_WAIT_TIMEOUT_MS
-#define AHT20_WAIT_TIMEOUT_MS      200U
+#ifndef AHT20_DELAY_SOFT_RESET_MS
+#define AHT20_DELAY_SOFT_RESET_MS   20U
+#endif
+
+/**
+ * @brief Délai après commande init 0xBE (datasheet §5.4 : 10ms min)
+ */
+#ifndef AHT20_DELAY_INIT_CMD_WAIT_MS
+#define AHT20_DELAY_INIT_CMD_WAIT_MS  20U
+#endif
+
+/**
+ * @brief Délai d'attente mesure (datasheet §5.4 : ≥75ms)
+ */
+#ifndef AHT20_DELAY_MEASUREMENT_WAIT_MS
+#define AHT20_DELAY_MEASUREMENT_WAIT_MS  80U
 #endif
 
 /* ============================================================================
