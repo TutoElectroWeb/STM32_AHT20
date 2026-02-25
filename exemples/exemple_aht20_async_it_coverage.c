@@ -262,6 +262,7 @@ int main(void)
     if (AHT20_Async_ErrorFlag(&aht20_ctx)) {
       printf("INFO  ErrorFlag actif\r\n");
       printf("ERREUR  Async: %s\r\n", AHT20_StatusToString(AHT20_GetLastError(&haht20)));
+      printf("INFO  Erreurs consécutives : %u\r\n", (unsigned)AHT20_GetConsecutiveErrors(&haht20));
       AHT20_Async_ClearFlags(&aht20_ctx);
     }
 
