@@ -29,8 +29,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "STM32_AHT20.h"
 #include <stdio.h>
+#include "STM32_AHT20.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,8 +48,7 @@ typedef struct {
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define LOG_NAME "exemple_aht20_polling_error_handling"  ///< Identifiant log série
-#define MEASUREMENT_INTERVAL_MS 3000
-#define MAX_RETRY AHT20_MAX_CONSECUTIVE_ERRORS  /* Seuil défini dans STM32_AHT20_conf.h (défaut: 3) */
+#define MEASUREMENT_INTERVAL_MS 3000                         ///< Intervalle entre mesures (ms)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -62,8 +61,8 @@ I2C_HandleTypeDef hi2c3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static AHT20_Handle_t haht20;
-AHT20_Stats_t stats = {0};
+static AHT20_Handle_t haht20;               ///< Handle principal AHT20
+static AHT20_Stats_t stats = {0};           ///< Statistiques de lecture (compteurs)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -181,9 +180,8 @@ int main(void)
   }
 
     /* 5) Paramètres runtime de la boucle principale */
-    printf("INFO  Démarrage monitoring avec retry automatique\r\n");
-    printf("INFO  Intervalle: %d ms | Max retries: %d\r\n\r\n",
-         MEASUREMENT_INTERVAL_MS, MAX_RETRY);
+    printf("INFO  Démarrage monitoring diagnostic\r\n");
+    printf("INFO  Intervalle: %d ms\r\n\r\n", MEASUREMENT_INTERVAL_MS);
 
   /* USER CODE END 2 */
 
@@ -200,51 +198,33 @@ int main(void)
     printf("INFO  Lecture #%lu\r\n", loop_count);
 
     AHT20_Data sensor_data;
-    AHT20_Status read_status = AHT20_ERR_TIMEOUT;
-    uint8_t retry = 0;
+    stats.total_reads++;
+    AHT20_Status read_status = AHT20_ReadMeasurements(&haht20, &sensor_data);
 
-    // Tentative lecture avec retry
-    for (retry = 0; retry < MAX_RETRY; retry++) {
-        stats.total_reads++;
-
-        read_status = AHT20_ReadMeasurements(&haht20, &sensor_data);
-
-        if (read_status == AHT20_OK) {
-            // Succès
-            stats.success_reads++;
-          printf("OK  T=%.1f°C, H=%.1f%%RH\r\n",
-                   sensor_data.temperature, sensor_data.humidity);
-            break;
-        } else {
-            // Erreur - logger et compter
-          printf("INFO  Tentative %d/%d: %s\r\n",
-                   retry + 1, MAX_RETRY, AHT20_StatusToString(read_status));
-
-            // Incrémenter compteur erreur
-            switch (read_status) {
-                case AHT20_ERR_BUSY:
-                    stats.error_busy++;
-                    HAL_Delay(100); // Attendre si busy
-                    break;
-                case AHT20_ERR_CHECKSUM:
-                    stats.error_checksum++;
-                    break;
-                case AHT20_ERR_I2C:
-                    stats.error_i2c++;
-                    break;
-                default:
-                    stats.error_other++;
-                    break;
-            }
-
-            // Si dernière tentative échouée, vérifier status
-            if (retry == MAX_RETRY - 1) {
-                if (AHT20_GetStatus(&haht20, &status_byte) == AHT20_OK) {
-                printf("INFO  Diagnostic:\r\n");
-                    PrintStatusByte(status_byte);
-                }
-            }
-        }
+    if (read_status == AHT20_OK) {
+      stats.success_reads++;
+      printf("OK  T=%.1f°C, H=%.1f%%RH\r\n",
+         sensor_data.temperature, sensor_data.humidity);
+    } else {
+      printf("ERREUR  Lecture: %s\r\n", AHT20_StatusToString(read_status));
+      switch (read_status) {
+        case AHT20_ERR_BUSY:
+          stats.error_busy++;
+          break;
+        case AHT20_ERR_CHECKSUM:
+          stats.error_checksum++;
+          break;
+        case AHT20_ERR_I2C:
+          stats.error_i2c++;
+          break;
+        default:
+          stats.error_other++;
+          break;
+      }
+      if (AHT20_GetStatus(&haht20, &status_byte) == AHT20_OK) {
+      printf("INFO  Diagnostic:\r\n");
+      PrintStatusByte(status_byte);
+      }
     }
 
     /* Statistiques périodiques tous les 10 cycles — accumulateur reseté manuellement si besoin */
@@ -442,11 +422,16 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+    /* Handler d'erreur bloquant: LED clignotante pour diagnostic visuel. */
+    __disable_irq();
+    while (1)  // Boucle d'erreur bloquante
+    {
+      HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);                           // Fait clignoter la LED d'erreur
+      for (volatile uint32_t wait = 0U; wait < 250000U; ++wait) {          // Temporisation locale 250ms sans HAL_Delay
+        __NOP();                                                            // Occupation CPU minimale pour espacer le clignotement
+      }
+    }
+    
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

@@ -147,22 +147,8 @@ int main(void)
         printf("Température : %.1f °C\r\n", sensor_data.temperature);
         printf("Humidité    : %.1f %%RH\r\n\r\n", sensor_data.humidity);
     } else {
-        /* consecutive_errors incrémenté par la lib — recovery automatique si seuil atteint */
-        printf("ERREUR  Erreur lecture [%d/%d]: %s\r\n",
-               haht20.consecutive_errors, AHT20_MAX_CONSECUTIVE_ERRORS,
-               AHT20_StatusToString(status));
-
-        /* Recovery après AHT20_MAX_CONSECUTIVE_ERRORS erreurs consécutives */
-        if (haht20.consecutive_errors >= AHT20_MAX_CONSECUTIVE_ERRORS) {
-            printf("INFO  Recovery : DeInit + Init...\r\n");
-            AHT20_DeInit(&haht20);                      /* Remet le handle à zéro */
-            status = AHT20_Init(&haht20, &hi2c3);       /* Re-initialise le capteur */
-            if (status == AHT20_OK) {
-                printf("OK  Recovery AHT20\r\n");
-            } else {
-                printf("ERREUR  Recovery AHT20: %s\r\n", AHT20_StatusToString(status));
-            }
-        }
+      printf("ERREUR  Lecture: %s\r\n", AHT20_StatusToString(status));
+      Error_Handler();
     }
 
     HAL_Delay(MEASUREMENT_INTERVAL_MS);
@@ -354,11 +340,16 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+    /* Handler d'erreur bloquant: LED clignotante pour diagnostic visuel. */
+    __disable_irq();
+    while (1)  // Boucle d'erreur bloquante
+    {
+      HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);                           // Fait clignoter la LED d'erreur
+      for (volatile uint32_t wait = 0U; wait < 250000U; ++wait) {          // Temporisation locale 250ms sans HAL_Delay
+        __NOP();                                                            // Occupation CPU minimale pour espacer le clignotement
+      }
+    }
+    
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

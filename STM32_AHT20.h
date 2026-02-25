@@ -104,7 +104,7 @@ typedef struct {
 
     volatile uint8_t   async_busy;         ///< 1 = transfert IT en cours (guard polling)
 } AHT20_Handle_t;
-typedef AHT20_Handle_t AHT20_HandleTypeDef;  ///< Alias CubeMX-style
+
 
 /* ============================================================================
  * Exported functions prototypes
@@ -178,6 +178,20 @@ AHT20_Status AHT20_GetStatus(AHT20_Handle_t *haht20, uint8_t *status);
  * @retval Pointeur vers une chaîne statique constante (jamais NULL)
  */
 const char *AHT20_StatusToString(AHT20_Status status);
+
+/**
+ * @brief  Retourne le dernier code d'erreur mémorisé dans le handle.
+ * @param  haht20  Handle AHT20 (non NULL)
+ * @retval Dernier code d'erreur, ou AHT20_ERR_NULL_PTR si handle invalide
+ */
+AHT20_Status AHT20_GetLastError(const AHT20_Handle_t *haht20);
+
+/**
+ * @brief  Retourne le compteur d'erreurs consécutives.
+ * @param  haht20  Handle AHT20 (non NULL)
+ * @retval Nombre d'erreurs consécutives, 0 si handle invalide
+ */
+uint8_t AHT20_GetConsecutiveErrors(const AHT20_Handle_t *haht20);
 
 /** @brief Alias ReadMeasurements — conforme au pattern commun des libs STM32 */
 #define AHT20_ReadAll AHT20_ReadMeasurements
@@ -266,6 +280,10 @@ void AHT20_Async_Init(AHT20_Async *ctx, AHT20_Handle_t *haht20);
  * @note Préserve : haht20, hi2c, tous les callbacks, user_ctx.
  *       Remet : state=IDLE, flags=false, buffers=0, deadlines=0.
  *       Utile pour récupération d'erreur sans ré-appeler Init+SetCallbacks.
+  * @pre  ctx non NULL
+ * @post ctx->state == AHT20_ASYNC_IDLE
+ * @post ctx->haht20->async_busy == 0  (libère le guard polling)
+ * @warning ⚠️ Abandonne toute mesure en cours — appeler depuis main loop uniquement
  */
 void AHT20_Async_Reset(AHT20_Async *ctx);
 
@@ -289,6 +307,10 @@ void AHT20_Async_SetIrqCallbacks(AHT20_Async *ctx,
  * @brief Déclenche une lecture asynchrone en mode IT
  * @note  IT uniquement — DMA non implémenté (trame 7B, bus I2C partagé).
  * @return AHT20_OK si démarré, erreur sinon
+  * @pre  ctx->haht20->initialized == true  (AHT20_Init() réussi)
+ * @pre  NVIC activé pour le périphérique I2C utilisé
+ * @pre  HAL_GetTick() monotone (uint32_t, wraparound géré par soustraction non signée)
+ * @post ctx->state transitoire après déclenchement (ou ASYNC_IDLE si HAL_BUSY — normal sur bus partagé)
  */
 AHT20_Status AHT20_ReadAll_IT(AHT20_Async *ctx);
 
@@ -334,16 +356,22 @@ void AHT20_Async_ClearFlags(AHT20_Async *ctx);
 
 /**
  * @brief À appeler depuis HAL_I2C_MasterTxCpltCallback()
+  * @pre  Appelé exclusivement depuis le contexte IRQ HAL (HAL_I2C_MasterTxCpltCallback)
  */
 void AHT20_Async_OnI2CMasterTxCplt(AHT20_Async *ctx, I2C_HandleTypeDef *hi2c);
 
 /**
  * @brief À appeler depuis HAL_I2C_MasterRxCpltCallback()
+  * @pre  Appelé exclusivement depuis le contexte IRQ HAL (HAL_I2C_MasterRxCpltCallback)
+ * @pre  rx_buf dimensionné à ≥ 7 octets (taille trame protocole)
+ * @post notify_data_pending == true (si CRC/parité OK) ou notify_error_pending == true
  */
 void AHT20_Async_OnI2CMasterRxCplt(AHT20_Async *ctx, I2C_HandleTypeDef *hi2c);
 
 /**
  * @brief À appeler depuis HAL_I2C_ErrorCallback()
+  * @pre  Appelé exclusivement depuis le contexte IRQ HAL (HAL_I2C_ErrorCallback)
+ * @post notify_error_pending == true si handle correspond
  */
 void AHT20_Async_OnI2CError(AHT20_Async *ctx, I2C_HandleTypeDef *hi2c);
 

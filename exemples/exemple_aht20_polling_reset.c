@@ -33,8 +33,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "STM32_AHT20.h"
 #include <stdio.h>
+#include "STM32_AHT20.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -190,7 +190,7 @@ int main(void)
       printf("INFO  Tentative de récupération avec SoftReset...\r\n");
 
       if (PerformSoftResetAndReinit() != AHT20_OK) {
-        printf("ERREUR  Récupération impossible\r\n");
+        printf("ERREUR  Récupération impossible: %s\r\n", AHT20_StatusToString(status));
           Error_Handler();
       }
       printf("OK  Récupération réussie\r\n\r\n");
@@ -223,7 +223,7 @@ int main(void)
             CheckAndPrintStatus("Après reset");
         printf("========================================\r\n\r\n");
         } else {
-        printf("ERREUR  Reset échoué, poursuite du programme\r\n\r\n");
+        printf("ERREUR  Reset échoué: %s, poursuite du programme\r\n\r\n", AHT20_StatusToString(status));
         }
     }
 
@@ -247,7 +247,7 @@ int main(void)
           printf("OK  Capteur récupéré\r\n\r\n");
                 continue;  // Reprendre mesure immédiatement
             } else {
-          printf("ERREUR  Récupération impossible\r\n");
+          printf("ERREUR  Récupération impossible: %s\r\n", AHT20_StatusToString(status));
                 Error_Handler();
             }
         }
@@ -442,11 +442,16 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+    /* Handler d'erreur bloquant: LED clignotante pour diagnostic visuel. */
+    __disable_irq();
+    while (1)  // Boucle d'erreur bloquante
+    {
+      HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);                           // Fait clignoter la LED d'erreur
+      for (volatile uint32_t wait = 0U; wait < 250000U; ++wait) {          // Temporisation locale 250ms sans HAL_Delay
+        __NOP();                                                            // Occupation CPU minimale pour espacer le clignotement
+      }
+    }
+    
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

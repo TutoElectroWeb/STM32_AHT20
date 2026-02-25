@@ -50,6 +50,20 @@ const char* AHT20_StatusToString(AHT20_Status status) {
 }
 #endif /* AHT20_DEBUG_ENABLE */
 
+AHT20_Status AHT20_GetLastError(const AHT20_Handle_t *haht20) {
+    if (haht20 == NULL) {
+        return AHT20_ERR_NULL_PTR;
+    }
+    return haht20->last_error;
+}
+
+uint8_t AHT20_GetConsecutiveErrors(const AHT20_Handle_t *haht20) {
+    if (haht20 == NULL) {
+        return 0U;
+    }
+    return haht20->consecutive_errors;
+}
+
 /* ============================================================================
  * Private functions
  * ============================================================================ */

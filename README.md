@@ -127,31 +127,42 @@ Quand `consecutive_errors >= AHT20_MAX_CONSECUTIVE_ERRORS` (défaut : 3), l'appl
 
 ## Exemples
 
-| Fichier                                  | Mode    | Description                                               |
-| ---------------------------------------- | ------- | --------------------------------------------------------- |
-| `exemple_aht20_polling.c`                | Polling | Lecture basique toutes les 2 s                            |
-| `exemple_aht20_polling_error_handling.c` | Polling | Gestion erreurs : retry + `consecutive_errors` + stats    |
-| `exemple_aht20_polling_reset.c`          | Polling | `SoftReset()` + monitoring registre statut                |
-| `exemple_aht20_polling_api_coverage.c`   | Polling | Couverture API publique : callbacks, reset async, GetData |
-| `exemple_aht20_async_it.c`               | Async   | IT avec `TriggerEvery`, callbacks IRQ-safe, `IsIdle`      |
+| Fichier                                  | Mode     | Description                                                         |
+| ---------------------------------------- | -------- | ------------------------------------------------------------------- |
+| `exemple_aht20_polling.c`                | Polling  | Lecture basique toutes les 2 s                                      |
+| `exemple_aht20_polling_error_handling.c` | Polling  | Gestion erreurs : retry + `consecutive_errors` + stats              |
+| `exemple_aht20_polling_reset.c`          | Polling  | `SoftReset()` + monitoring registre statut                          |
+| `exemple_aht20_async_it_coverage.c`      | Async IT | Coverage API async : callbacks IRQ-safe, GetData, ClearFlags, Reset |
+| `exemple_aht20_async_it.c`               | Async    | IT avec `TriggerEvery`, callbacks IRQ-safe, `IsIdle`                |
 
 ### Matrice couverture API
 
-| API                           | polling | err_handling | reset | features | async_it |
-| ----------------------------- | :-----: | :----------: | :---: | :------: | :------: |
-| `AHT20_Init`                  |    x    |      x       |   x   |    x     |    x     |
-| `AHT20_DeInit`                |         |      x       |   x   |          |    x     |
-| `AHT20_SoftReset`             |         |      x       |   x   |          |          |
-| `AHT20_ReadMeasurements`      |    x    |      x       |   x   |    x     |          |
-| `AHT20_GetStatus`             |         |              |   x   |          |          |
-| `AHT20_StatusToString`        |    x    |      x       |   x   |    x     |    x     |
-| `AHT20_Async_Init`            |         |              |       |          |    x     |
-| `AHT20_Async_SetCallbacks`    |         |              |       |          |    x     |
-| `AHT20_Async_SetIrqCallbacks` |         |              |       |          |    x     |
-| `AHT20_ReadAll_IT`            |         |              |       |          |    x     |
-| `AHT20_Async_TriggerEvery`    |         |              |       |          |    x     |
-| `AHT20_Async_Process`         |         |              |       |          |    x     |
-| `AHT20_Async_IsIdle`          |         |              |       |          |    x     |
+| API                             | polling | err_handling | reset | async_coverage | async_it |
+| ------------------------------- | :-----: | :----------: | :---: | :------------: | :------: |
+| `AHT20_Init`                    |    x    |      x       |   x   |       x        |    x     |
+| `AHT20_DeInit`                  |         |      x       |   x   |                |    x     |
+| `AHT20_SoftReset`               |         |      x       |   x   |                |          |
+| `AHT20_ReadMeasurements`        |    x    |      x       |   x   |                |          |
+| `AHT20_GetStatus`               |         |      x       |   x   |                |          |
+| `AHT20_GetLastError`            |         |              |       |       x        |    x     |
+| `AHT20_StatusToString`          |    x    |      x       |   x   |       x        |    x     |
+| `AHT20_Async_Init`              |         |              |       |       x        |    x     |
+| `AHT20_Async_SetCallbacks`      |         |              |       |       x        |          |
+| `AHT20_Async_SetIrqCallbacks`   |         |              |       |       x        |          |
+| `AHT20_ReadAll_IT`              |         |              |       |       x        |    x     |
+| `AHT20_Async_TriggerEvery`      |         |              |       |                |    x     |
+| `AHT20_Async_Tick`              |         |              |       |                |    x     |
+| `AHT20_Async_Process`           |         |              |       |       x        |          |
+| `AHT20_Async_IsIdle`            |         |              |       |       x        |          |
+| `AHT20_Async_Reset`             |         |              |       |       x        |          |
+| `AHT20_Async_HasData`           |         |              |       |       x        |          |
+| `AHT20_Async_GetData`           |         |              |       |       x        |          |
+| `AHT20_Async_DataReadyFlag`     |         |              |       |       x        |          |
+| `AHT20_Async_ErrorFlag`         |         |              |       |       x        |          |
+| `AHT20_Async_ClearFlags`        |         |              |       |       x        |          |
+| `AHT20_Async_OnI2CMasterTxCplt` |         |              |       |       x        |    x     |
+| `AHT20_Async_OnI2CMasterRxCplt` |         |              |       |       x        |    x     |
+| `AHT20_Async_OnI2CError`        |         |              |       |       x        |    x     |
 
 ---
 
@@ -198,8 +209,10 @@ Toutes les macros sont protégées par `#ifndef` — surchargeables via `-D` ou 
 
 | Macro                              | Défaut | Unité | Description                                                      |
 | ---------------------------------- | :----: | :---: | ---------------------------------------------------------------- |
-| `AHT20_DEFAULT_TIMEOUT_MS`         | `100`  |  ms   | Timeout I2C pour les transactions bloquantes                     |
-| `AHT20_WAIT_TIMEOUT_MS`            | `200`  |  ms   | Timeout watchdog d'attente mesure async                          |
+| `AHT20_I2C_TIMEOUT_MS`             | `100`  |  ms   | Timeout I2C pour les transactions bloquantes (polling)           |
+| `AHT20_DELAY_SOFT_RESET_MS`        |  `20`  |  ms   | Délai après soft reset (datasheet §5.4)                          |
+| `AHT20_DELAY_INIT_CMD_WAIT_MS`     |  `20`  |  ms   | Délai après commande init calibration (`0xBE 0x08 0x00`)         |
+| `AHT20_DELAY_MEASUREMENT_WAIT_MS`  |  `80`  |  ms   | Délai d'attente mesure (datasheet ≥ 75 ms)                       |
 | `AHT20_MAX_CONSECUTIVE_ERRORS`     |  `3`   |   —   | Seuil erreurs consécutives avant signalement critique            |
 | `AHT20_DEFAULT_SAMPLE_INTERVAL_MS` | `2000` |  ms   | Intervalle minimal entre deux mesures async                      |
 | `AHT20_DEBUG_ENABLE`               |   —    |   —   | Active `AHT20_StatusToString()` (laisser commenté en production) |
@@ -210,7 +223,7 @@ Toutes les macros sont protégées par `#ifndef` — surchargeables via `-D` ou 
 
 - **Adresse fixe `0x38`** : conflit avec DHT20 (même adresse) — ne pas placer les deux sur le même bus I2C.
 - **Séquence Init** (datasheet §5.4.1) : lit le statut, envoie `0xBE 0x08 0x00` uniquement si bit CAL [3] = 0. En conditions normales (après power-on), CAL=1 d'emblée.
-- **Délai mesure** : `AHT20_WAIT_TIMEOUT_MS = 200 ms` (datasheet spécifie ≥ 75 ms — marge ×2,5 pour bus chargé).
+- **Délai mesure** : `AHT20_DELAY_MEASUREMENT_WAIT_MS = 80 ms` (datasheet spécifie ≥ 75 ms — légère marge).
 - **CRC** : poly `0x31` (x⁸ + x⁵ + x⁴ + 1), init `0xFF`. Vérifié sur chaque trame de mesure.
 - **`GetStatus` pendant Init** : utilise `HAL_I2C_Master_Receive` direct (bypass du guard `initialized = false`).
 - **DMA** : non implémenté — voir §Pré-requis CubeMX.

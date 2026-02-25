@@ -1,27 +1,30 @@
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file           : exemple_aht20_async_it.c
-  * @brief          : Exemple AHT20 async non-bloquant (I2C IT)
+  * @file           : exemple_aht20_async_it_coverage.c
+  * @brief          : Couverture API async AHT20 — callbacks, reset, GetData, ClearFlags, IRQ-safe
   ******************************************************************************
-  * Pré-requis CubeMX:
-  * - I2C3 activé (I2C, addressing 7-bit) + broches SCL/SDA configurées par CubeMX
-  *   (pull-ups externes requis sur le bus I2C, typiquement 4.7 kΩ)
-  * - NVIC: activer "I2C3 event interrupt" et "I2C3 error interrupt"
-  * - USART2 optionnel (Asynchronous, 115200 8N1) si tu utilises printf via __io_putchar()
   *
-  * Notes:
-  * - Fichier d'exemple (non compilé par défaut)
-  * - La mesure est déclenchée toutes les 2 s.
-  * - La boucle principale ne bloque pas: progression via callbacks I2C + AHT20_Async_Tick().
-  * - AHT20_MAX_CONSECUTIVE_ERRORS : seuil de détection panne prolongée (défaut: 3).
+  * Couvre les fonctions non présentes dans les exemples polling/async_it :
+  *   - AHT20_Async_SetCallbacks()    — callbacks data-ready/erreur (main loop)
+  *   - AHT20_Async_SetIrqCallbacks() — callbacks IRQ-safe (signal flag seulement)
+  *   - AHT20_Async_Reset()           — reset contexte async (préserve callbacks)
+  *   - AHT20_Async_Process()         — avance la FSM manuellement (sans Tick)
+  *   - AHT20_Async_HasData()         — vrai après Process, avant GetData
+  *   - AHT20_Async_GetData()         — récupère la donnée si HasData=true
+  *   - AHT20_Async_DataReadyFlag()   — drapeau data-ready (vrai après Process)
+  *   - AHT20_Async_ErrorFlag()       — drapeau erreur (vrai après Process)
+  *   - AHT20_Async_ClearFlags()      — acquittement manuel des drapeaux
+  *
+  * CubeMX requis (Nucleo L476RG) :
+  *   - I2C3 : SCL=PC0, SDA=PC1, Standard mode, Global interrupt activée
+  *   - USART2 : 115200 bauds (printf)
   *
   * Compatibilité FreeRTOS :
   * - HAL_Delay() suspend la tâche courante → pas de spin-wait, CPU libéré ✅
-  * - async_busy / async_state sont volatile → lecture safe depuis plusieurs tâches ✅
+  * - async_busy / state sont volatile → lecture safe depuis plusieurs tâches ✅
   * - Pour plusieurs tâches accédant au bus I2C : utiliser un mutex I2C (osMutexAcquire)
-  * - Init() uniquement depuis une tâche d'init (jamais depuis une IRQ) ✅
-  * - AHT20_Async_Tick() à appeler depuis UNE SEULE tâche (pas thread-safe multi-tick) ⚠️
+  * - AHT20_Async_Tick() à appeler depuis UNE SEULE tâche (⚠️)
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -31,7 +34,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
-#include <stdbool.h>
 #include "STM32_AHT20.h"
 /* USER CODE END Includes */
 
@@ -42,8 +44,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LOG_NAME             "exemple_aht20_async_it"  ///< Identifiant log série
-#define MEASUREMENT_INTERVAL_MS  2000u                   ///< Intervalle de mesure (ms)
+#define LOG_NAME            "exemple_aht20_async_it_coverage"     ///< Identifiant log série
+#define MEASUREMENT_INTERVAL_MS  2000u                            ///< Intervalle mesure async (ms)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -57,10 +59,12 @@ I2C_HandleTypeDef hi2c3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static AHT20_Handle_t haht20;                       ///< Handle principal AHT20
-static AHT20_Async  aht20_ctx;                      ///< Contexte asynchrone IT
-static uint32_t last_trigger_time = 0;              ///< Timestamp dernière mesure (TriggerEvery)
-static uint32_t measure_count = 0;                  ///< Compteur mesures valides
+static AHT20_Handle_t haht20;                        ///< Handle principal AHT20
+static AHT20_Async   aht20_ctx;                      ///< Contexte asynchrone IT
+
+/* Flags posés par callbacks IRQ (volatile), consommés dans la boucle principale */
+static volatile bool irq_data_flag  = false;         ///< Signal data-ready depuis IRQ
+static volatile bool irq_error_flag = false;         ///< Signal erreur depuis IRQ
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,6 +73,15 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C3_Init(void);
 /* USER CODE BEGIN PFP */
+/* Callback main-loop : données disponibles (appelé depuis AHT20_Async_Process) */
+static void OnAHT20DataReady(void *user_ctx, const AHT20_Data *data,
+                             AHT20_Status st);
+/* Callback main-loop : erreur (appelé depuis AHT20_Async_Process) */
+static void OnAHT20Error(void *user_ctx, AHT20_Status st);
+/* Callback IRQ-safe : signal seulement — PAS d'accès capteur ici ! */
+static void OnAHT20IrqDataReady(void *user_ctx);
+/* Callback IRQ-safe : erreur signalée */
+static void OnAHT20IrqError(void *user_ctx);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -84,6 +97,47 @@ int __io_putchar(int ch) {
     return ch;
 }
 
+/* --- Callbacks main-loop -------------------------------------------------- */
+/**
+ * @brief  Callback main-loop : données disponibles (appelé depuis AHT20_Async_Process).
+ * @param  user_ctx  Contexte utilisateur (NULL ici).
+ * @param  data      Pointeur vers les données prises (non NULL si st==OK).
+ * @param  st        Statut de la mesure.
+ */
+static void OnAHT20DataReady(void *user_ctx, const AHT20_Data *data,
+                             AHT20_Status st)
+{
+  (void)user_ctx;
+  if (st == AHT20_OK) {
+    printf("OK  CB-DATA T=%.2f C | H=%.2f %%\r\n",
+           data->temperature, data->humidity);
+  }
+}
+
+/**
+ * @brief  Callback main-loop : erreur async (appelé depuis AHT20_Async_Process).
+ * @param  user_ctx  Contexte utilisateur (NULL ici).
+ * @param  st        Code d'erreur.
+ */
+static void OnAHT20Error(void *user_ctx, AHT20_Status st)
+{
+  (void)user_ctx;
+  printf("ERREUR  CB-ERR: %s\r\n", AHT20_StatusToString(st));
+}
+
+/* --- Callbacks IRQ-safe (← depuis l'interruption I2C) -------------------- */
+/* RÈGLE : ne faire ici qu'un set de flag volatile — pas de printf, pas HAL ! */
+static void OnAHT20IrqDataReady(void *user_ctx)
+{
+  (void)user_ctx;
+  irq_data_flag = true;
+}
+
+static void OnAHT20IrqError(void *user_ctx)
+{
+  (void)user_ctx;
+  irq_error_flag = true;
+}
 /* USER CODE END 0 */
 
 /**
@@ -121,79 +175,111 @@ int main(void)
   /* 1) Bannière exemple */
   printf("\r\n========================================\r\n");
   printf("  Fichier: " LOG_NAME "\r\n");
-  printf("  AHT20 - Async IT (non-bloquant)\r\n");
+  printf("  AHT20 - Coverage async IT (callbacks, GetData, ClearFlags, IRQ-safe)\r\n");
   printf("========================================\r\n\r\n");
 
   /* 2) Initialisation capteur */
   printf("INFO  Initialisation AHT20...\r\n");
-  AHT20_Status status = AHT20_Init(&haht20, &hi2c3);   // Soft reset + lecture statut + cmd 0xBE si CAL=0
-  if (status != AHT20_OK) {
-    printf("ERREUR  Init: %s\r\n", AHT20_StatusToString(status));
+  AHT20_Status st = AHT20_Init(&haht20, &hi2c3);   // Soft reset + lecture statut + cmd 0xBE si CAL=0
+  if (st != AHT20_OK) {
+    printf("ERREUR  Init: %s\r\n", AHT20_StatusToString(st));
     Error_Handler();
   }
-  haht20.sample_interval_ms = MEASUREMENT_INTERVAL_MS;  // Surcharge l'intervalle par défaut
   printf("OK  AHT20 initialisé\r\n\r\n");
 
-  /* 3) Initialisation contexte async */
-  /* Note : Ne pas appeler AHT20_ReadMeasurements() depuis le while(1) — mélange polling/async interdit */
-  AHT20_Async_Init(&aht20_ctx, &haht20);              // Réinitialise FSM, state=IDLE
-  printf("OK  Contexte async initialisé\r\n");
-  printf("   Mode : Interruptions I2C (IT)\r\n");
-  printf("   Intervalle : %u ms (MEASUREMENT_INTERVAL_MS)\r\n", MEASUREMENT_INTERVAL_MS);
-  printf("   Base de temps : SysTick (HAL_GetTick)\r\n");
-  printf("   Callbacks HAL I2C dans USER CODE BEGIN 4\r\n\r\n");
+  /* 3) Initialisation contexte async + enregistrement callbacks */
+  AHT20_Async_Init(&aht20_ctx, &haht20);                   // Réinitialise FSM, state=IDLE
+
+  printf("INFO  Enregistrement callbacks main-loop (data-ready + erreur)...\r\n");
+  AHT20_Async_SetCallbacks(&aht20_ctx,
+                            OnAHT20DataReady,
+                            OnAHT20Error,
+                            NULL);                           // user_ctx = NULL (non utilisé ici)
+  printf("OK  Callbacks main-loop enregistrés\r\n");
+
+  printf("INFO  Enregistrement callbacks IRQ-safe (signal flag)...\r\n");
+  AHT20_Async_SetIrqCallbacks(&aht20_ctx,
+                               OnAHT20IrqDataReady,
+                               OnAHT20IrqError,
+                               NULL);                       // Callbacks IRQ-safe : set flag uniquement
+  printf("OK  Callbacks IRQ enregistrés\r\n");
+
+  printf("INFO  AHT20_Async_Reset : simule récupération d'erreur (callbacks conservés)...\r\n");
+  AHT20_Async_Reset(&aht20_ctx);                           // Remet state=IDLE, préserve callbacks
+  printf("OK  Reset contexte async OK\r\n\r\n");
 
   /* 4) Premier déclenchement / validation MX */
-  AHT20_Status trig_init = AHT20_ReadAll_IT(&aht20_ctx); // Déclenche 1ère mesure — valide config I2C + IRQ
-  if (trig_init != AHT20_OK) {
+  st = AHT20_ReadAll_IT(&aht20_ctx);                       // Déclenche 1ère mesure — valide config I2C + IRQ
+  if (st != AHT20_OK) {
     printf("ERREUR  Configuration MX incomplète (I2C/IRQ) pour mode IT\r\n");
-    printf("   Action : .ioc -> Connectivity -> I2Cx -> Configuration -> NVIC Settings\r\n");
-    printf("            cocher I2C event interrupt + I2C error interrupt\r\n");
-    printf("   Code   : %s\r\n", AHT20_StatusToString(trig_init));
+    printf("   Action: vérifier I2C choisi + IRQ EV/ER puis régénérer\r\n");
     Error_Handler();
   }
-  last_trigger_time = HAL_GetTick();
   printf("INFO  Première mesure lancée...\r\n");
   printf("   Validation MX (I2C/IRQ) effectuée par la librairie\r\n\r\n");
+
+  /* 5) Paramètres runtime de la boucle principale */
+  uint32_t last_trigger = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-    while (1)
+  while (1)
+  {
+    uint32_t now = HAL_GetTick();
+
+    /* Flags IRQ : consommés en main-loop, jamais longtemps pending */
+    if (irq_data_flag) {
+      irq_data_flag = false;
+      printf("INFO  IRQ data-ready signal reçu\r\n");
+    }
+    if (irq_error_flag) {
+      irq_error_flag = false;
+      printf("INFO  IRQ erreur signal reçu\r\n");
+    }
+
+    /* Avance la FSM (TX→wait→RX→done) — appelle OnDataReady/OnError via callbacks en interne */
+    AHT20_Async_Process(&aht20_ctx, now);
+
+    /* DataReadyFlag : vrai après Process quand state=DONE, avant consommation par GetData */
+    if (AHT20_Async_DataReadyFlag(&aht20_ctx)) {
+      printf("INFO  DataReadyFlag actif\r\n");
+    }
+
+    /* HasData + GetData : consomme la donnée, remet state=IDLE, data_ready_flag=false */
+    if (AHT20_Async_HasData(&aht20_ctx)) {
+      AHT20_Data sample;
+      if (AHT20_Async_GetData(&aht20_ctx, &sample) == AHT20_OK) {
+        printf("OK  Process+HasData+GetData T=%.2f C | H=%.2f %%\r\n",
+               sample.temperature, sample.humidity);
+      }
+      /* ClearFlags : acquittement explicite des drapeaux après GetData */
+      AHT20_Async_ClearFlags(&aht20_ctx);
+      last_trigger = now;
+    }
+
+    /* ErrorFlag : levé par Process sur timeout ou erreur HAL_I2C */
+    if (AHT20_Async_ErrorFlag(&aht20_ctx)) {
+      printf("INFO  ErrorFlag actif\r\n");
+      printf("ERREUR  Async: %s\r\n", AHT20_StatusToString(AHT20_GetLastError(&haht20)));
+      AHT20_Async_ClearFlags(&aht20_ctx);
+    }
+
+    /* Nouveau déclenchement périodique */
+    if (AHT20_Async_IsIdle(&aht20_ctx) &&
+        (now - last_trigger >= MEASUREMENT_INTERVAL_MS))
     {
-        uint32_t now = HAL_GetTick();
-        AHT20_Data data;
-
-        /* Déclenchement périodique — l'arbitrage ERR_BUSY est géré par la lib */
-        (void)AHT20_Async_TriggerEvery(&aht20_ctx, now, &last_trigger_time);
-
-        AHT20_TickResult tick = AHT20_Async_Tick(&aht20_ctx, now, &data);
-        if (tick == AHT20_TICK_DATA_READY) {
-          measure_count++;
-          printf("OK  Mesure #%lu: T=%.2f C | RH=%.1f %%\r\n",
-                 measure_count, data.temperature, data.humidity);
-        } else if (tick == AHT20_TICK_ERROR) {
-          AHT20_Status err = AHT20_GetLastError(&haht20);
-          printf("ERREUR  Async: %s\r\n", AHT20_StatusToString(err));
-          printf("   Recovery: DeInit + Init\r\n");
-          AHT20_DeInit(&haht20);
-          if (AHT20_Init(&haht20, &hi2c3) == AHT20_OK) {
-            AHT20_Async_Init(&aht20_ctx, &haht20);
-            last_trigger_time = HAL_GetTick();
-            printf("OK  Recovery AHT20\r\n");
-          } else {
-            Error_Handler();
-          }
-        }
-
+      AHT20_Async_ClearFlags(&aht20_ctx);
+      AHT20_ReadAll_IT(&aht20_ctx);
+      last_trigger = now;
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
-  /* AHT20_Async_Reset(&aht20_ctx); */
   /* AHT20_DeInit(&haht20); */
   /* À appeler en sortie de boucle (reset logiciel, bootloader, tests unitaires)
-   * pour libérer le contexte async et remettre le handle à zéro. */
+     pour remettre le handle à zéro avant une ré-initialisation éventuelle. */
   /* USER CODE END 3 */
 }
 
@@ -258,6 +344,7 @@ static void MX_I2C3_Init(void)
   /* USER CODE END I2C3_Init 0 */
 
   /* USER CODE BEGIN I2C3_Init 1 */
+
   /* USER CODE END I2C3_Init 1 */
   hi2c3.Instance = I2C3;
   hi2c3.Init.Timing = 0x10D19CE4;
@@ -287,6 +374,7 @@ static void MX_I2C3_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C3_Init 2 */
+  /* ⚠️ CubeMX : cocher "I2C3 event interrupt" + "I2C3 error interrupt" dans NVIC Settings */
   /* USER CODE END I2C3_Init 2 */
 
 }
@@ -300,9 +388,11 @@ static void MX_USART2_UART_Init(void)
 {
 
   /* USER CODE BEGIN USART2_Init 0 */
+
   /* USER CODE END USART2_Init 0 */
 
   /* USER CODE BEGIN USART2_Init 1 */
+
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
   huart2.Init.BaudRate = 115200;
@@ -319,6 +409,7 @@ static void MX_USART2_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART2_Init 2 */
+
   /* USER CODE END USART2_Init 2 */
 
 }
@@ -363,34 +454,27 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
 /**
  * @brief  Callback HAL I2C de fin de transmission (IT).
  */
-void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  /* Chaque lib filtre par son hi2c interne — appeler toutes les libs sans if externe */
+void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
   AHT20_Async_OnI2CMasterTxCplt(&aht20_ctx, hi2c);   /* La lib filtre hi2c en interne */
-  // LIB2_Async_OnI2CMasterTxCplt(&hlib2_async, hi2c);
 }
-
 /**
  * @brief  Callback HAL I2C de fin de réception (IT).
  */
-void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  /* Chaque lib filtre par son hi2c interne — appeler toutes les libs sans if externe */
+void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
   AHT20_Async_OnI2CMasterRxCplt(&aht20_ctx, hi2c);   /* La lib filtre hi2c en interne */
-  // LIB2_Async_OnI2CMasterRxCplt(&hlib2_async, hi2c);
 }
-
 /**
  * @brief  Callback HAL I2C d'erreur.
  */
-void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
-  /* Chaque lib filtre par son hi2c interne — appeler toutes les libs sans if externe */
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
+{
   AHT20_Async_OnI2CError(&aht20_ctx, hi2c);           /* La lib filtre hi2c en interne */
-  // LIB2_Async_OnI2CError(&hlib2_async, hi2c);
 }
-
 /* USER CODE END 4 */
 
 /**
@@ -423,6 +507,8 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
