@@ -315,37 +315,9 @@ void AHT20_Async_SetIrqCallbacks(AHT20_Async *ctx,
 AHT20_Status AHT20_ReadAll_IT(AHT20_Async *ctx);
 
 /**
- * @brief Machine à états asynchrone (appeler dans main loop)
- * @param now_ms Timestamp courant (HAL_GetTick())
- */
-void AHT20_Async_Process(AHT20_Async *ctx, uint32_t now_ms);
-
-/**
  * @brief Vérifie si contexte est inactif
  */
 bool AHT20_Async_IsIdle(const AHT20_Async *ctx);
-
-/**
- * @brief Vérifie si données disponibles
- */
-bool AHT20_Async_HasData(const AHT20_Async *ctx);
-
-/**
- * @brief Récupère les dernières données
- * @note  Cette fonction consomme la mesure et remet l'état à AHT20_ASYNC_IDLE.
- *        Elle doit être appelée après DataReadyFlag/IRQ pour autoriser la mesure suivante.
- */
-AHT20_Status AHT20_Async_GetData(AHT20_Async *ctx, AHT20_Data *out);
-
-/**
- * @brief Vérification flag data_ready
- */
-bool AHT20_Async_DataReadyFlag(const AHT20_Async *ctx);
-
-/**
- * @brief Vérification flag error
- */
-bool AHT20_Async_ErrorFlag(const AHT20_Async *ctx);
 
 /**
  * @brief Clear les flags

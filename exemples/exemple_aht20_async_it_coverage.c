@@ -238,41 +238,28 @@ int main(void)
       printf("INFO  IRQ erreur signal reçu\r\n");
     }
 
-    /* Avance la FSM (TX→wait→RX→done) — appelle OnDataReady/OnError via callbacks en interne */
-    AHT20_Async_Process(&aht20_ctx, now);
+    /* Déclenchement périodique (Pattern A) */
+    AHT20_Async_TriggerEvery(&aht20_ctx, now, &last_trigger);
 
-    /* DataReadyFlag : vrai après Process quand state=DONE, avant consommation par GetData */
-    if (AHT20_Async_DataReadyFlag(&aht20_ctx)) {
-      printf("INFO  DataReadyFlag actif\r\n");
-    }
-
-    /* HasData + GetData : consomme la donnée, remet state=IDLE, data_ready_flag=false */
-    if (AHT20_Async_HasData(&aht20_ctx)) {
-      AHT20_Data sample;
-      if (AHT20_Async_GetData(&aht20_ctx, &sample) == AHT20_OK) {
-        printf("OK  Process+HasData+GetData T=%.2f C | H=%.2f %%\r\n",
+    /* Avance la FSM et consomme la donnée via Tick (Pattern A) */
+    AHT20_Data sample = {0};
+    switch (AHT20_Async_Tick(&aht20_ctx, now, &sample)) {
+      case AHT20_TICK_DATA_READY:
+        printf("OK  Tick T=%.2f C | H=%.2f %%\r\n",
                sample.temperature, sample.humidity);
-      }
-      /* ClearFlags : acquittement explicite des drapeaux après GetData */
-      AHT20_Async_ClearFlags(&aht20_ctx);
-      last_trigger = now;
+        break;
+      case AHT20_TICK_ERROR:
+        printf("ERREUR  Async: %s\r\n", AHT20_StatusToString(AHT20_GetLastError(&haht20)));
+        printf("INFO  Erreurs consécutives : %u\r\n", (unsigned)AHT20_GetConsecutiveErrors(&haht20));
+        AHT20_Async_ClearFlags(&aht20_ctx);
+        break;
+      default:
+        break;
     }
 
-    /* ErrorFlag : levé par Process sur timeout ou erreur HAL_I2C */
-    if (AHT20_Async_ErrorFlag(&aht20_ctx)) {
-      printf("INFO  ErrorFlag actif\r\n");
-      printf("ERREUR  Async: %s\r\n", AHT20_StatusToString(AHT20_GetLastError(&haht20)));
-      printf("INFO  Erreurs consécutives : %u\r\n", (unsigned)AHT20_GetConsecutiveErrors(&haht20));
-      AHT20_Async_ClearFlags(&aht20_ctx);
-    }
-
-    /* Nouveau déclenchement périodique */
-    if (AHT20_Async_IsIdle(&aht20_ctx) &&
-        (now - last_trigger >= MEASUREMENT_INTERVAL_MS))
-    {
-      AHT20_Async_ClearFlags(&aht20_ctx);
-      AHT20_ReadAll_IT(&aht20_ctx);
-      last_trigger = now;
+    /* IsIdle : vrai quand FSM au repos et prête pour un nouveau déclenchement */
+    if (AHT20_Async_IsIdle(&aht20_ctx)) {
+      /* (contexte inactif entre deux mesures — pas d'action nécessaire) */
     }
     /* USER CODE END WHILE */
 

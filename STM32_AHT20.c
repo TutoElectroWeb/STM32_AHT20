@@ -474,7 +474,7 @@ AHT20_Status AHT20_ReadAll_IT(AHT20_Async *ctx) {
 /**
  * @brief Machine à états asynchrone (main loop)
  */
-void AHT20_Async_Process(AHT20_Async *ctx, uint32_t now_ms) {
+static void AHT20_Async_Process(AHT20_Async *ctx, uint32_t now_ms) {
     if (ctx == NULL) return;
     
     // Gestion notifications callbacks utilisateur
@@ -566,14 +566,14 @@ bool AHT20_Async_IsIdle(const AHT20_Async *ctx) {
 /**
  * @brief Vérifie si données disponibles
  */
-bool AHT20_Async_HasData(const AHT20_Async *ctx) {
+static bool AHT20_Async_HasData(const AHT20_Async *ctx) {
     return (ctx != NULL) && (ctx->state == AHT20_ASYNC_DONE);
 }
 
 /**
  * @brief Récupère les données
  */
-AHT20_Status AHT20_Async_GetData(AHT20_Async *ctx, AHT20_Data *out) {
+static AHT20_Status AHT20_Async_GetData(AHT20_Async *ctx, AHT20_Data *out) {
     if (ctx == NULL || out == NULL) {
         return AHT20_ERR_NULL_PTR;
     }
@@ -595,16 +595,9 @@ AHT20_Status AHT20_Async_GetData(AHT20_Async *ctx, AHT20_Data *out) {
 }
 
 /**
- * @brief Vérifie flag data_ready
- */
-bool AHT20_Async_DataReadyFlag(const AHT20_Async *ctx) {
-    return (ctx != NULL) && ctx->data_ready_flag;
-}
-
-/**
  * @brief Vérifie flag error
  */
-bool AHT20_Async_ErrorFlag(const AHT20_Async *ctx) {
+static bool AHT20_Async_ErrorFlag(const AHT20_Async *ctx) {
     return (ctx != NULL) && ctx->error_flag;
 }
 
