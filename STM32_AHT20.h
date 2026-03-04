@@ -3,7 +3,7 @@
  * @file    STM32_AHT20.h
  * @author  STM32_LIB_STYLE_GUIDE
  * @brief   Driver pour le capteur AHT20 (Aosong) — température et humidité I2C
- * @version 0.9.0
+ * @version 0.9.2
  * @date    2026-02-22
  * @copyright Libre sous licence MIT.
  * @note    Délais bloquants : SoftReset 20ms, Init cmd 20ms, ReadMeasurements 80ms

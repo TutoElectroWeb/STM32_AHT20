@@ -142,7 +142,7 @@ AHT20_Status AHT20_Init(AHT20_Handle_t *haht20, I2C_HandleTypeDef *hi2c) {
             return AHT20_ERR_I2C;
         }
         /* Attendre fin init (datasheet: 10ms min — on utilise 20ms pour sécurité) */
-        HAL_Delay(AHT20_DELAY_INIT_CMD_WAIT_MS);
+        HAL_Delay(AHT20_DELAY_INIT_CMD_WAIT_MS); /* init: attente commande */
 
         /* Re-lire statut pour vérifier que la calibration est maintenant active */
         hal_status = HAL_I2C_Master_Receive(haht20->hi2c, haht20->i2c_addr,

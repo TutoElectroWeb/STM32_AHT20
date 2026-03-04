@@ -1,8 +1,10 @@
 # STM32_AHT20 — Driver STM32 HAL
 
+> **v0.9.2** — Libre sous licence MIT.
+
 Driver I2C pour le capteur de température et d'humidité **AHT20** (Aosong Electronics, protocole I2C, adresse `0x38`).
 
-**Datasheet** : [AHT20 v1.0.03](https://asairsensors.com/wp-content/uploads/2021/09/Data-Sheet-AHT20-Humidity-and-Temperature-Sensor-ASAIR-V1.0.03.pdf)
+**Datasheet** : [AHT20 (rév. 0.9.23)](https://asairsensors.com/wp-content/uploads/2021/09/Data-Sheet-AHT20-Humidity-and-Temperature-Sensor-ASAIR-v0.9.23.pdf)
 
 ---
 
@@ -232,7 +234,7 @@ Toutes les macros sont protégées par `#ifndef` — surchargeables via `-D` ou 
 
 ## Version
 
-**v0.9.0** (2026-02-22)
+**v0.9.2** (2026-02-22)
 
 - Conformité standard v0.9 : `consecutive_errors`, `last_hal_error`, `sample_interval_ms`, `DeInit`, `conf.h`, `StatusToString #ifdef`
 - API asynchrone IT — `TriggerEvery` 3 params (ABI inter-lib)
